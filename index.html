@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Py gaem</title>
+  <title>Top-Down Shooter Game</title>
   <style>
-    body, html { margin: 0; padding: 0; overflow: hidden; height: 100%; }
-    canvas { display: block; background: #000; }
+    body, html { margin: 0; padding: 0; overflow: hidden; height: 100%; background-color: #000; }
+    canvas { display: block; }
   </style>
 </head>
 <body>
@@ -15,7 +15,8 @@
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
     let width, height;
-    let player = { x: 50, y: 50, size: 30, speed: 5 };
+    let player = { x: 50, y: 50, size: 30, speed: 5, angle: 0 };
+    let bullets = [];
     let enemies = [];
     let score = 0;
     let highScore = localStorage.getItem('highScore') || 0;
@@ -45,6 +46,29 @@
       player.y = Math.max(0, Math.min(height - player.size, player.y));
     }
 
+    // Bullet class
+    class Bullet {
+      constructor(x, y, angle) {
+        this.size = 10;
+        this.x = x;
+        this.y = y;
+        this.angle = angle;
+        this.speed = 10;
+      }
+
+      update() {
+        this.x += Math.cos(this.angle) * this.speed;
+        this.y += Math.sin(this.angle) * this.speed;
+      }
+
+      draw() {
+        ctx.fillStyle = 'yellow';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
     // Enemy class
     class Enemy {
       constructor() {
@@ -55,8 +79,11 @@
       }
 
       update() {
-        this.y += this.speed;
-        if (this.y > height) this.y = -this.size;
+        let dx = player.x - this.x;
+        let dy = player.y - this.y;
+        let angle = Math.atan2(dy, dx);
+        this.x += Math.cos(angle) * this.speed;
+        this.y += Math.sin(angle) * this.speed;
       }
 
       draw() {
@@ -89,14 +116,28 @@
           enemies = [];
         }
       });
+      bullets.forEach(bullet => {
+        bullet.update();
+        if (bullet.x < 0 || bullet.x > width || bullet.y < 0 || bullet.y > height) {
+          bullets = bullets.filter(b => b !== bullet);
+        } else {
+          enemies.forEach(enemy => {
+            if (isCollision(bullet, enemy)) {
+              bullets = bullets.filter(b => b !== bullet);
+              enemies = enemies.filter(e => e !== enemy);
+              score++;
+            }
+          });
+        }
+      });
     }
 
-    // Check for collision between player and enemy
-    function isCollision(player, enemy) {
-      return player.x < enemy.x + enemy.size &&
-             player.x + player.size > enemy.x &&
-             player.y < enemy.y + enemy.size &&
-             player.y + player.size > enemy.y;
+    // Check for collision between two objects
+    function isCollision(obj1, obj2) {
+      return obj1.x < obj2.x + obj2.size &&
+             obj1.x + obj1.size > obj2.x &&
+             obj1.y < obj2.y + obj2.size &&
+             obj1.y + obj1.size > obj2.y;
     }
 
     // Draw game elements
@@ -105,6 +146,7 @@
       ctx.fillStyle = 'white';
       ctx.fillRect(player.x, player.y, player.size, player.size);
       enemies.forEach(enemy => enemy.draw());
+      bullets.forEach(bullet => bullet.draw());
       ctx.fillText(`Score: ${score}`, 10, 30);
       ctx.fillText(`High Score: ${highScore}`, 10, 60);
     }
@@ -119,7 +161,6 @@
       update(dt);
       draw();
 
-      score++;
       requestAnimationFrame(gameLoop);
     }
 
