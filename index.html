@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Py gaem</title>
+<style>
+  body { margin: 0; background: black; }
+  canvas { display: block; margin: auto; background: #000; }
+</style>
+</head>
+<body>
+<canvas id="gameCanvas" width="800" height="600"></canvas>
+
+<script>
+// Canvas setup
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+const width = canvas.width;
+const height = canvas.height;
+
+// Load images
+const backgroundImg = new Image();
+backgroundImg.src = 'background.jpg';
+
+const playerImg = new Image();
+playerImg.src = 'player.png';
+
+const enemyImg = new Image();
+enemyImg.src = 'enemy.png';
+
+const bulletImg = new Image();
+bulletImg.src = 'bullet.png';
+
+const playerSize = 32;
+const enemySize = 32;
+const bulletSize = 16;
+
+let gameState = 'start'; // 'start', 'playing', 'gameover'
+
+let score = 0;
+let highScore = 0;
+
+let player = {
+  x: width / 2 - playerSize / 2,
+  y: height / 2 - playerSize / 2,
+  speed: 0.5
+};
+
+let enemies = [];
+let bullets = [];
+
+let spawnDelay = 3000;
+const minSpawnDelay = 500;
+let timeSinceLastSpawn = 0;
+
+const timeToDecreaseDelay = 10000;
+let timeSinceLastDecrease = 0;
+
+const enemySpeed = 0.1;
+const bulletSpeed = 0.8;
+
+let keys = {};
+
+let lastTime = 0;
+
+// Load high score from localStorage
+window.onload = () => {
+  const stored = localStorage.getItem('highScore');
+  if (stored) highScore = parseInt(stored);
+};
+
+function resetGame() {
+  score = 0;
+  enemies = [];
+  bullets = [];
+  spawnDelay = 3000;
+  timeSinceLastSpawn = 0;
+  timeSinceLastDecrease = 0;
+  player.x = width / 2 - playerSize / 2;
+  player.y = height / 2 - playerSize / 2;
+}
+
+function rectsCollide(r1, r2) {
+  return !(r2.x > r1.x + r1.width ||
+           r2.x + r2.width < r1.x ||
+           r2.y > r1.y + r1.height ||
+           r2.y + r2.height < r1.y);
+}
+
+function drawText(text, x, y, color = 'white', size = 24) {
+  ctx.fillStyle = color;
+  ctx.font = `${size}px Arial`;
+  ctx.fillText(text, x, y);
+}
+
+function updatePlayer(dt) {
+  if (gameState !== 'playing') return;
+
+  if (keys['arrowleft'] || keys['a']) player.x -= player.speed * dt;
+  if (keys['arrowright'] || keys['d']) player.x += player.speed * dt;
+  if (keys['arrowup'] || keys['w']) player.y -= player.speed * dt;
+  if (keys['arrowdown'] || keys['s']) player.y += player.speed * dt;
+
+  player.x = Math.max(0, Math.min(width - playerSize, player.x));
+  player.y = Math.max(0, Math.min(height - playerSize, player.y));
+}
+
+function gameLoop(timestamp) {
+  if (!lastTime) lastTime = timestamp;
+  const dt = timestamp - lastTime;
+  lastTime = timestamp;
+
+  ctx.clearRect(0, 0, width, height);
+
+  if (gameState === 'start') {
+    // Draw start screen
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, width, height);
+
+    drawText('Click to Start', width / 2 - 80, height / 2, 'white', 36);
+    drawText(`High Score: ${highScore}`, width / 2 - 80, height / 2 + 40, 'yellow', 24);
+  }
+  else if (gameState === 'playing') {
+    // Draw background
+    if (backgroundImg.complete) {
+      ctx.drawImage(backgroundImg, 0, 0, width, height);
+    } else {
+      ctx.fillStyle = '#444';
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    // Spawn enemies
+    timeSinceLastSpawn += dt;
+    timeSinceLastDecrease += dt;
+
+    if (timeSinceLastSpawn >= spawnDelay) {
+      // Spawn enemy at least 150px from player center
+      const safeDistance = 150;
+      let ex, ey;
+      do {
+        ex = Math.random() * (width - enemySize);
+        ey = Math.random() * (height - enemySize);
+      } while (Math.hypot(ex + enemySize / 2 - (player.x + playerSize / 2), ey + enemySize / 2 - (player.y + playerSize / 2)) < safeDistance);
+
+      enemies.push({ x: ex, y: ey, width: enemySize, height: enemySize });
+      timeSinceLastSpawn = 0;
+    }
+
+    if (timeSinceLastDecrease >= timeToDecreaseDelay) {
+      spawnDelay = Math.max(minSpawnDelay, spawnDelay - 150);
+      timeSinceLastDecrease = 0;
+    }
+
+    // Move enemies toward player
+    enemies.forEach(enemy => {
+      const dx = (player.x + playerSize / 2) - (enemy.x + enemy.width / 2);
+      const dy = (player.y + playerSize / 2) - (enemy.y + enemy.height / 2);
+      const dist = Math.hypot(dx, dy);
+      if (dist > 0) {
+        enemy.x += (dx / dist) * enemySpeed * dt;
+        enemy.y += (dy / dist) * enemySpeed * dt;
+      }
+    });
+
+    // Move bullets
+    for (let i = bullets.length - 1; i >= 0; i--) {
+      let b = bullets[i];
+      b.x += b.dx * bulletSpeed * dt;
+      b.y += b.dy * bulletSpeed * dt;
+
+      // Remove bullets off screen
+      if (b.x < -bulletSize || b.x > width || b.y < -bulletSize || b.y > height) {
+        bullets.splice(i, 1);
+        continue;
+      }
+
+      // Check bullet-enemy collisions
+      for (let j = enemies.length - 1; j >= 0; j--) {
+        if (rectsCollide(b, enemies[j])) {
+          enemies.splice(j, 1);
+          bullets.splice(i, 1);
+          score++;
+          break;
+        }
+      }
+    }
+
+    // Check enemy-player collisions
+    for (const enemy of enemies) {
+      if (rectsCollide(enemy, { x: player.x, y: player.y, width: playerSize, height: playerSize })) {
+        gameState = 'gameover';
+        if (score > highScore) {
+          highScore = score;
+          localStorage.setItem('highScore', highScore);
+        }
+        break;
+      }
+    }
+
+    // Draw player
+    if (playerImg.complete) {
+      ctx.drawImage(playerImg, player.x, player.y, playerSize, playerSize);
+    } else {
+      ctx.fillStyle = 'cyan';
+      ctx.fillRect(player.x, player.y, playerSize, playerSize);
+    }
+
+    // Draw enemies
+    enemies.forEach(enemy => {
+      if (enemyImg.complete) {
+        ctx.drawImage(enemyImg, enemy.x, enemy.y, enemySize, enemySize);
+      } else {
+        ctx.fillStyle = 'red';
+        ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
+      }
+    });
+
+    // Draw bullets
+    bullets.forEach(b => {
+      if (bulletImg.complete) {
+        ctx.drawImage(bulletImg, b.x, b.y, bulletSize, bulletSize);
+      } else {
+        ctx.fillStyle = 'yellow';
+        ctx.fillRect(b.x, b.y, bulletSize, bulletSize);
+      }
+    });
+
+    // Draw score
+    drawText(`Score: ${score}`, 10, 30);
+  }
+  else if (gameState === 'gameover') {
+    // Draw game over screen
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, width, height);
+
+    drawText('Game Over! Click to Restart', width / 2 - 140, height / 2, 'red', 32);
+    drawText(`Final Score: ${score}`, width / 2 - 80, height / 2 + 40, 'white', 24);
+    drawText(`High Score: ${highScore}`, width / 2 - 80, height / 2 + 80, 'yellow', 24);
+  }
+
+  requestAnimationFrame(gameLoop);
+}
+
+// Input events
+window.addEventListener('keydown', e => {
+  keys[e.key.toLowerCase()] = true;
+});
+
+window.addEventListener('keyup', e => {
+  keys[e.key.toLowerCase()] = false;
+});
+
+// Shoot on mouse click, and handle state changes
+canvas.addEventListener('mousedown', e => {
+  if (e.button !== 0) return; // only left click
+
+  if (gameState === 'start') {
+    gameState = 'playing';
+    resetGame();
+  }
+  else if (gameState === 'gameover') {
+    gameState = 'start';
+  }
+  else if (gameState === 'playing') {
+    // Shoot bullet towards mouse
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+
+    const px = player.x + playerSize / 2;
+    const py = player.y + playerSize / 2;
+
+    let dx = mx - px;
+    let dy = my - py;
+    let dist = Math.hypot(dx, dy);
+    if (dist === 0) return;
+    dx /= dist;
+    dy /= dist;
+
+    bullets.push({ x: px - bulletSize / 2, y: py - bulletSize / 2, width: bulletSize, height: bulletSize, dx, dy });
+  }
+});
+
+// Main update loop for player movement and game loop
+function mainLoop(timestamp) {
+  if (!lastTime) lastTime = timestamp;
+  const dt = timestamp - lastTime;
+  lastTime = timestamp;
+
+  updatePlayer(dt);
+  gameLoop(timestamp);
+
+  requestAnimationFrame(mainLoop);
+}
+
+requestAnimationFrame(mainLoop);
+</script>
+</body>
+</html>
