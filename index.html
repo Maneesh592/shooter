@@ -1,300 +1,497 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<title>Py gaem</title>
-<style>
-  body { margin: 0; background: black; }
-  canvas { display: block; margin: auto; background: #000; }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Space Defender</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background: linear-gradient(135deg, #1a1a2e, #16213e);
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            color: #fff;
+        }
+        
+        #gameContainer {
+            position: relative;
+            box-shadow: 0 0 20px rgba(0, 200, 255, 0.5);
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        #gameCanvas {
+            background-color: #1a1a2e;
+            display: block;
+        }
+        
+        #gameTitle {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            font-size: 36px;
+            color: #00ffff;
+            text-shadow: 0 0 10px rgba(0, 200, 255, 0.8);
+            letter-spacing: 2px;
+        }
+        
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            text-align: center;
+            color: #aaa;
+            font-size: 14px;
+            padding: 10px;
+            background: rgba(0, 0, 0, 0.5);
+        }
+        
+        #loading {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 10, 30, 0.9);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10;
+        }
+        
+        #loadingProgress {
+            width: 300px;
+            height: 20px;
+            background: #222;
+            border-radius: 10px;
+            margin-top: 20px;
+            overflow: hidden;
+        }
+        
+        #progressBar {
+            height: 100%;
+            background: #00ffff;
+            width: 0%;
+            transition: width 0.3s;
+        }
+        
+        .hidden {
+            display: none;
+        }
+    </style>
 </head>
 <body>
-<canvas id="gameCanvas" width="800" height="600"></canvas>
+    <div id="gameContainer">
+        <div id="gameTitle">SPACE DEFENDER</div>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="instructions">
+            Move: WASD or Arrow Keys | Shoot: Left Click | Start/Restart: Click
+        </div>
+        
+        <div id="loading">
+            <h2>Loading Game Assets...</h2>
+            <div id="loadingProgress">
+                <div id="progressBar"></div>
+            </div>
+        </div>
+    </div>
 
-<script>
-// Canvas setup
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
-
-const width = canvas.width;
-const height = canvas.height;
-
-// Load images
-const backgroundImg = new Image();
-backgroundImg.src = 'background.jpg';
-
-const playerImg = new Image();
-playerImg.src = 'player.png';
-
-const enemyImg = new Image();
-enemyImg.src = 'enemy.png';
-
-const bulletImg = new Image();
-bulletImg.src = 'bullet.png';
-
-const playerSize = 32;
-const enemySize = 32;
-const bulletSize = 16;
-
-let gameState = 'start'; // 'start', 'playing', 'gameover'
-
-let score = 0;
-let highScore = 0;
-
-let player = {
-  x: width / 2 - playerSize / 2,
-  y: height / 2 - playerSize / 2,
-  speed: 0.5
-};
-
-let enemies = [];
-let bullets = [];
-
-let spawnDelay = 3000;
-const minSpawnDelay = 500;
-let timeSinceLastSpawn = 0;
-
-const timeToDecreaseDelay = 10000;
-let timeSinceLastDecrease = 0;
-
-const enemySpeed = 0.1;
-const bulletSpeed = 0.8;
-
-let keys = {};
-
-let lastTime = 0;
-
-// Load high score from localStorage
-window.onload = () => {
-  const stored = localStorage.getItem('highScore');
-  if (stored) highScore = parseInt(stored);
-};
-
-function resetGame() {
-  score = 0;
-  enemies = [];
-  bullets = [];
-  spawnDelay = 3000;
-  timeSinceLastSpawn = 0;
-  timeSinceLastDecrease = 0;
-  player.x = width / 2 - playerSize / 2;
-  player.y = height / 2 - playerSize / 2;
-}
-
-function rectsCollide(r1, r2) {
-  return !(r2.x > r1.x + r1.width ||
-           r2.x + r2.width < r1.x ||
-           r2.y > r1.y + r1.height ||
-           r2.y + r2.height < r1.y);
-}
-
-function drawText(text, x, y, color = 'white', size = 24) {
-  ctx.fillStyle = color;
-  ctx.font = `${size}px Arial`;
-  ctx.fillText(text, x, y);
-}
-
-function updatePlayer(dt) {
-  if (gameState !== 'playing') return;
-
-  if (keys['arrowleft'] || keys['a']) player.x -= player.speed * dt;
-  if (keys['arrowright'] || keys['d']) player.x += player.speed * dt;
-  if (keys['arrowup'] || keys['w']) player.y -= player.speed * dt;
-  if (keys['arrowdown'] || keys['s']) player.y += player.speed * dt;
-
-  player.x = Math.max(0, Math.min(width - playerSize, player.x));
-  player.y = Math.max(0, Math.min(height - playerSize, player.y));
-}
-
-function gameLoop(timestamp) {
-  if (!lastTime) lastTime = timestamp;
-  const dt = timestamp - lastTime;
-  lastTime = timestamp;
-
-  ctx.clearRect(0, 0, width, height);
-
-  if (gameState === 'start') {
-    // Draw start screen
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, width, height);
-
-    drawText('Click to Start', width / 2 - 80, height / 2, 'white', 36);
-    drawText(`High Score: ${highScore}`, width / 2 - 80, height / 2 + 40, 'yellow', 24);
-  }
-  else if (gameState === 'playing') {
-    // Draw background
-    if (backgroundImg.complete) {
-      ctx.drawImage(backgroundImg, 0, 0, width, height);
-    } else {
-      ctx.fillStyle = '#444';
-      ctx.fillRect(0, 0, width, height);
-    }
-
-    // Spawn enemies
-    timeSinceLastSpawn += dt;
-    timeSinceLastDecrease += dt;
-
-    if (timeSinceLastSpawn >= spawnDelay) {
-      // Spawn enemy at least 150px from player center
-      const safeDistance = 150;
-      let ex, ey;
-      do {
-        ex = Math.random() * (width - enemySize);
-        ey = Math.random() * (height - enemySize);
-      } while (Math.hypot(ex + enemySize / 2 - (player.x + playerSize / 2), ey + enemySize / 2 - (player.y + playerSize / 2)) < safeDistance);
-
-      enemies.push({ x: ex, y: ey, width: enemySize, height: enemySize });
-      timeSinceLastSpawn = 0;
-    }
-
-    if (timeSinceLastDecrease >= timeToDecreaseDelay) {
-      spawnDelay = Math.max(minSpawnDelay, spawnDelay - 150);
-      timeSinceLastDecrease = 0;
-    }
-
-    // Move enemies toward player
-    enemies.forEach(enemy => {
-      const dx = (player.x + playerSize / 2) - (enemy.x + enemy.width / 2);
-      const dy = (player.y + playerSize / 2) - (enemy.y + enemy.height / 2);
-      const dist = Math.hypot(dx, dy);
-      if (dist > 0) {
-        enemy.x += (dx / dist) * enemySpeed * dt;
-        enemy.y += (dy / dist) * enemySpeed * dt;
-      }
-    });
-
-    // Move bullets
-    for (let i = bullets.length - 1; i >= 0; i--) {
-      let b = bullets[i];
-      b.x += b.dx * bulletSpeed * dt;
-      b.y += b.dy * bulletSpeed * dt;
-
-      // Remove bullets off screen
-      if (b.x < -bulletSize || b.x > width || b.y < -bulletSize || b.y > height) {
-        bullets.splice(i, 1);
-        continue;
-      }
-
-      // Check bullet-enemy collisions
-      for (let j = enemies.length - 1; j >= 0; j--) {
-        if (rectsCollide(b, enemies[j])) {
-          enemies.splice(j, 1);
-          bullets.splice(i, 1);
-          score++;
-          break;
+    <script>
+        // Game constants
+        const WIDTH = 800;
+        const HEIGHT = 600;
+        const PLAYER_SPEED = 0.5;
+        const ENEMY_SPEED = 0.1;
+        const BULLET_SPEED = 0.8;
+        const INITIAL_SPAWN_DELAY = 3000; // ms
+        const MIN_SPAWN_DELAY = 500; // ms
+        const TIME_TO_DECREASE_DELAY = 10000; // ms
+        
+        // Canvas setup
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+        const loadingScreen = document.getElementById("loading");
+        const progressBar = document.getElementById("progressBar");
+        
+        // Game assets
+        const assets = {
+            background: new Image(),
+            player: new Image(),
+            enemy: new Image(),
+            bullet: new Image()
+        };
+        
+        // Load game assets
+        let loadedCount = 0;
+        const totalAssets = Object.keys(assets).length;
+        
+        function loadAssets() {
+            assets.background.onload = assetLoaded;
+            assets.player.onload = assetLoaded;
+            assets.enemy.onload = assetLoaded;
+            assets.bullet.onload = assetLoaded;
+            
+            assets.background.src = "background.jpg";
+            assets.player.src = "player.png";
+            assets.enemy.src = "enemy.png";
+            assets.bullet.src = "bullet.png";
         }
-      }
-    }
-
-    // Check enemy-player collisions
-    for (const enemy of enemies) {
-      if (rectsCollide(enemy, { x: player.x, y: player.y, width: playerSize, height: playerSize })) {
-        gameState = 'gameover';
-        if (score > highScore) {
-          highScore = score;
-          localStorage.setItem('highScore', highScore);
+        
+        function assetLoaded() {
+            loadedCount++;
+            const progress = Math.floor((loadedCount / totalAssets) * 100);
+            progressBar.style.width = `${progress}%`;
+            
+            if (loadedCount === totalAssets) {
+                setTimeout(() => {
+                    loadingScreen.classList.add("hidden");
+                    initGame();
+                }, 500);
+            }
         }
-        break;
-      }
-    }
-
-    // Draw player
-    if (playerImg.complete) {
-      ctx.drawImage(playerImg, player.x, player.y, playerSize, playerSize);
-    } else {
-      ctx.fillStyle = 'cyan';
-      ctx.fillRect(player.x, player.y, playerSize, playerSize);
-    }
-
-    // Draw enemies
-    enemies.forEach(enemy => {
-      if (enemyImg.complete) {
-        ctx.drawImage(enemyImg, enemy.x, enemy.y, enemySize, enemySize);
-      } else {
-        ctx.fillStyle = 'red';
-        ctx.fillRect(enemy.x, enemy.y, enemy.width, enemy.height);
-      }
-    });
-
-    // Draw bullets
-    bullets.forEach(b => {
-      if (bulletImg.complete) {
-        ctx.drawImage(bulletImg, b.x, b.y, bulletSize, bulletSize);
-      } else {
-        ctx.fillStyle = 'yellow';
-        ctx.fillRect(b.x, b.y, bulletSize, bulletSize);
-      }
-    });
-
-    // Draw score
-    drawText(`Score: ${score}`, 10, 30);
-  }
-  else if (gameState === 'gameover') {
-    // Draw game over screen
-    ctx.fillStyle = 'black';
-    ctx.fillRect(0, 0, width, height);
-
-    drawText('Game Over! Click to Restart', width / 2 - 140, height / 2, 'red', 32);
-    drawText(`Final Score: ${score}`, width / 2 - 80, height / 2 + 40, 'white', 24);
-    drawText(`High Score: ${highScore}`, width / 2 - 80, height / 2 + 80, 'yellow', 24);
-  }
-
-  requestAnimationFrame(gameLoop);
-}
-
-// Input events
-window.addEventListener('keydown', e => {
-  keys[e.key.toLowerCase()] = true;
-});
-
-window.addEventListener('keyup', e => {
-  keys[e.key.toLowerCase()] = false;
-});
-
-// Shoot on mouse click, and handle state changes
-canvas.addEventListener('mousedown', e => {
-  if (e.button !== 0) return; // only left click
-
-  if (gameState === 'start') {
-    gameState = 'playing';
-    resetGame();
-  }
-  else if (gameState === 'gameover') {
-    gameState = 'start';
-  }
-  else if (gameState === 'playing') {
-    // Shoot bullet towards mouse
-    const rect = canvas.getBoundingClientRect();
-    const mx = e.clientX - rect.left;
-    const my = e.clientY - rect.top;
-
-    const px = player.x + playerSize / 2;
-    const py = player.y + playerSize / 2;
-
-    let dx = mx - px;
-    let dy = my - py;
-    let dist = Math.hypot(dx, dy);
-    if (dist === 0) return;
-    dx /= dist;
-    dy /= dist;
-
-    bullets.push({ x: px - bulletSize / 2, y: py - bulletSize / 2, width: bulletSize, height: bulletSize, dx, dy });
-  }
-});
-
-// Main update loop for player movement and game loop
-function mainLoop(timestamp) {
-  if (!lastTime) lastTime = timestamp;
-  const dt = timestamp - lastTime;
-  lastTime = timestamp;
-
-  updatePlayer(dt);
-  gameLoop(timestamp);
-
-  requestAnimationFrame(mainLoop);
-}
-
-requestAnimationFrame(mainLoop);
-</script>
+        
+        // Game state
+        let gameState = {
+            playerX: WIDTH / 2,
+            playerY: HEIGHT / 2,
+            playerWidth: 32,
+            playerHeight: 32,
+            enemies: [],
+            bullets: [],
+            score: 0,
+            highScore: localStorage.getItem('highScore') ? parseInt(localStorage.getItem('highScore')) : 0,
+            spawnDelay: INITIAL_SPAWN_DELAY,
+            timeSinceLastSpawn: 0,
+            timeSinceLastDecrease: 0,
+            state: "start", // start, playing, gameover
+            keys: {
+                up: false,
+                down: false,
+                left: false,
+                right: false
+            },
+            lastTime: 0
+        };
+        
+        // Initialize game
+        function initGame() {
+            // Set up event listeners
+            document.addEventListener("keydown", handleKeyDown);
+            document.addEventListener("keyup", handleKeyUp);
+            canvas.addEventListener("click", handleClick);
+            
+            // Start game loop
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Handle keyboard input
+        function handleKeyDown(e) {
+            switch(e.key) {
+                case "ArrowUp":
+                case "w":
+                case "W":
+                    gameState.keys.up = true;
+                    break;
+                case "ArrowDown":
+                case "s":
+                case "S":
+                    gameState.keys.down = true;
+                    break;
+                case "ArrowLeft":
+                case "a":
+                case "A":
+                    gameState.keys.left = true;
+                    break;
+                case "ArrowRight":
+                case "d":
+                case "D":
+                    gameState.keys.right = true;
+                    break;
+            }
+        }
+        
+        function handleKeyUp(e) {
+            switch(e.key) {
+                case "ArrowUp":
+                case "w":
+                case "W":
+                    gameState.keys.up = false;
+                    break;
+                case "ArrowDown":
+                case "s":
+                case "S":
+                    gameState.keys.down = false;
+                    break;
+                case "ArrowLeft":
+                case "a":
+                case "A":
+                    gameState.keys.left = false;
+                    break;
+                case "ArrowRight":
+                case "d":
+                case "D":
+                    gameState.keys.right = false;
+                    break;
+            }
+        }
+        
+        // Handle mouse clicks
+        function handleClick(e) {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            if (gameState.state === "start") {
+                // Reset game state
+                gameState.state = "playing";
+                gameState.score = 0;
+                gameState.enemies = [];
+                gameState.bullets = [];
+                gameState.spawnDelay = INITIAL_SPAWN_DELAY;
+                gameState.timeSinceLastSpawn = 0;
+                gameState.timeSinceLastDecrease = 0;
+                gameState.playerX = WIDTH / 2;
+                gameState.playerY = HEIGHT / 2;
+            } 
+            else if (gameState.state === "gameover") {
+                gameState.state = "start";
+            }
+            else if (gameState.state === "playing") {
+                // Create new bullet
+                const playerCenterX = gameState.playerX + gameState.playerWidth / 2;
+                const playerCenterY = gameState.playerY + gameState.playerHeight / 2;
+                const dx = mouseX - playerCenterX;
+                const dy = mouseY - playerCenterY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance === 0) return;
+                
+                const normalizedDx = dx / distance;
+                const normalizedDy = dy / distance;
+                
+                gameState.bullets.push({
+                    x: playerCenterX - 8,
+                    y: playerCenterY - 8,
+                    dx: normalizedDx,
+                    dy: normalizedDy
+                });
+            }
+        }
+        
+        // Main game loop
+        function gameLoop(timestamp) {
+            // Calculate delta time
+            const deltaTime = timestamp - (gameState.lastTime || timestamp);
+            gameState.lastTime = timestamp;
+            
+            // Update game state
+            updateGame(deltaTime);
+            
+            // Render game
+            renderGame();
+            
+            // Continue game loop
+            requestAnimationFrame(gameLoop);
+        }
+        
+        // Update game state
+        function updateGame(deltaTime) {
+            if (gameState.state !== "playing") return;
+            
+            // Update player position based on keyboard input
+            if (gameState.keys.up) gameState.playerY -= PLAYER_SPEED * deltaTime;
+            if (gameState.keys.down) gameState.playerY += PLAYER_SPEED * deltaTime;
+            if (gameState.keys.left) gameState.playerX -= PLAYER_SPEED * deltaTime;
+            if (gameState.keys.right) gameState.playerX += PLAYER_SPEED * deltaTime;
+            
+            // Keep player within screen bounds
+            gameState.playerX = Math.max(0, Math.min(WIDTH - gameState.playerWidth, gameState.playerX));
+            gameState.playerY = Math.max(0, Math.min(HEIGHT - gameState.playerHeight, gameState.playerY));
+            
+            // Update spawn timers
+            gameState.timeSinceLastSpawn += deltaTime;
+            gameState.timeSinceLastDecrease += deltaTime;
+            
+            // Spawn new enemies
+            if (gameState.timeSinceLastSpawn >= gameState.spawnDelay) {
+                spawnEnemy();
+                gameState.timeSinceLastSpawn = 0;
+            }
+            
+            // Decrease spawn delay over time
+            if (gameState.timeSinceLastDecrease >= TIME_TO_DECREASE_DELAY) {
+                gameState.spawnDelay = Math.max(MIN_SPAWN_DELAY, gameState.spawnDelay - 150);
+                gameState.timeSinceLastDecrease = 0;
+            }
+            
+            // Update enemy positions
+            for (let enemy of gameState.enemies) {
+                const dx = gameState.playerX + gameState.playerWidth/2 - (enemy.x + 16);
+                const dy = gameState.playerY + gameState.playerHeight/2 - (enemy.y + 16);
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance > 0) {
+                    enemy.x += (dx / distance) * ENEMY_SPEED * deltaTime;
+                    enemy.y += (dy / distance) * ENEMY_SPEED * deltaTime;
+                }
+                
+                // Check collision with player
+                const playerRect = {
+                    x: gameState.playerX,
+                    y: gameState.playerY,
+                    width: gameState.playerWidth,
+                    height: gameState.playerHeight
+                };
+                
+                const enemyRect = {
+                    x: enemy.x,
+                    y: enemy.y,
+                    width: 32,
+                    height: 32
+                };
+                
+                if (checkCollision(playerRect, enemyRect)) {
+                    gameState.state = "gameover";
+                    if (gameState.score > gameState.highScore) {
+                        gameState.highScore = gameState.score;
+                        localStorage.setItem('highScore', gameState.highScore.toString());
+                    }
+                    return;
+                }
+            }
+            
+            // Update bullet positions
+            for (let i = gameState.bullets.length - 1; i >= 0; i--) {
+                const bullet = gameState.bullets[i];
+                bullet.x += bullet.dx * BULLET_SPEED * deltaTime;
+                bullet.y += bullet.dy * BULLET_SPEED * deltaTime;
+                
+                // Remove bullets that go off screen
+                if (bullet.x < -16 || bullet.x > WIDTH || bullet.y < -16 || bullet.y > HEIGHT) {
+                    gameState.bullets.splice(i, 1);
+                    continue;
+                }
+                
+                // Check bullet-enemy collisions
+                const bulletRect = {
+                    x: bullet.x,
+                    y: bullet.y,
+                    width: 16,
+                    height: 16
+                };
+                
+                for (let j = gameState.enemies.length - 1; j >= 0; j--) {
+                    const enemy = gameState.enemies[j];
+                    const enemyRect = {
+                        x: enemy.x,
+                        y: enemy.y,
+                        width: 32,
+                        height: 32
+                    };
+                    
+                    if (checkCollision(bulletRect, enemyRect)) {
+                        // Remove enemy and bullet
+                        gameState.enemies.splice(j, 1);
+                        gameState.bullets.splice(i, 1);
+                        gameState.score++;
+                        break;
+                    }
+                }
+            }
+        }
+        
+        // Spawn a new enemy at a safe distance from player
+        function spawnEnemy() {
+            const safeDistance = 150;
+            let enemyX, enemyY;
+            let validPosition = false;
+            
+            while (!validPosition) {
+                enemyX = Math.random() * (WIDTH - 32);
+                enemyY = Math.random() * (HEIGHT - 32);
+                
+                const playerCenterX = gameState.playerX + gameState.playerWidth/2;
+                const playerCenterY = gameState.playerY + gameState.playerHeight/2;
+                const enemyCenterX = enemyX + 16;
+                const enemyCenterY = enemyY + 16;
+                
+                const dx = playerCenterX - enemyCenterX;
+                const dy = playerCenterY - enemyCenterY;
+                const distance = Math.sqrt(dx * dx + dy * dy);
+                
+                if (distance >= safeDistance) {
+                    validPosition = true;
+                }
+            }
+            
+            gameState.enemies.push({ x: enemyX, y: enemyY });
+        }
+        
+        // Check collision between two rectangles
+        function checkCollision(rect1, rect2) {
+            return (
+                rect1.x < rect2.x + rect2.width &&
+                rect1.x + rect1.width > rect2.x &&
+                rect1.y < rect2.y + rect2.height &&
+                rect1.y + rect1.height > rect2.y
+            );
+        }
+        
+        // Render game
+        function renderGame() {
+            // Draw background
+            ctx.drawImage(assets.background, 0, 0, WIDTH, HEIGHT);
+            
+            if (gameState.state === "start") {
+                // Draw start screen
+                drawText("Click to Start", WIDTH/2, HEIGHT/2 - 30, 36, "#ffffff");
+                drawText(`High Score: ${gameState.highScore}`, WIDTH/2, HEIGHT/2 + 10, 36, "#ffff00");
+            }
+            else if (gameState.state === "playing") {
+                // Draw player
+                ctx.drawImage(assets.player, gameState.playerX, gameState.playerY, 32, 32);
+                
+                // Draw enemies
+                for (let enemy of gameState.enemies) {
+                    ctx.drawImage(assets.enemy, enemy.x, enemy.y, 32, 32);
+                }
+                
+                // Draw bullets
+                for (let bullet of gameState.bullets) {
+                    ctx.drawImage(assets.bullet, bullet.x, bullet.y, 16, 16);
+                }
+                
+                // Draw score
+                drawText(`Score: ${gameState.score}`, 10, 10, 36, "#ffffff");
+            }
+            else if (gameState.state === "gameover") {
+                // Draw game over screen
+                drawText("Game Over! Click to Restart", WIDTH/2, HEIGHT/2 - 40, 36, "#ff5555");
+                drawText(`Final Score: ${gameState.score}`, WIDTH/2, HEIGHT/2 + 10, 36, "#ffffff");
+                drawText(`High Score: ${gameState.highScore}`, WIDTH/2, HEIGHT/2 + 50, 36, "#ffff00");
+            }
+        }
+        
+        // Helper function to draw centered text
+        function drawText(text, x, y, size, color) {
+            ctx.font = `${size}px Arial`;
+            ctx.fillStyle = color;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(text, x, y);
+        }
+        
+        // Start loading assets
+        loadAssets();
+    </script>
 </body>
 </html>
